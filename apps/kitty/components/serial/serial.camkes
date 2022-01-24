@@ -1,0 +1,24 @@
+/*
+ * Copyright 2014, NICTA
+ *
+ * This software may be distributed and modified according to the terms of
+ * the BSD 2-Clause license. Note that NO WARRANTY is provided.
+ * See "LICENSE_BSD2.txt" for details.
+ *
+ * @TAG(NICTA_BSD)
+ */
+
+import "../../interfaces/serial.idl4";
+import "include/porttype.idl4";
+
+component serial {
+	provides serial     serial;
+    provides serial_lock lock;
+	consumes UARTIntr   intr;
+	dataport Buf        mem;
+	dataport Buf        iomux;
+	dataport Buf        buf;
+	emits SerialEvent has_data;
+	has mutex serial_mutex;
+	has binary_semaphore serial_ready;
+}

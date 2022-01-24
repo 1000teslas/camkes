@@ -1,0 +1,27 @@
+/*
+ * Copyright 2014, NICTA
+ *
+ * This software may be distributed and modified according to the terms of
+ * the BSD 2-Clause license. Note that NO WARRANTY is provided.
+ * See "LICENSE_BSD2.txt" for details.
+ *
+ * @TAG(NICTA_BSD)
+ */
+
+import "../../interfaces/serial.idl4";
+import "../../interfaces/rfid.idl4";
+
+component rfid {
+	control;
+	uses serial  serial;
+	dataport Buf buf;
+
+	/* Client */
+	emits rfid_event rfid_evt;
+	dataport Buf rfid_card;
+
+	provides beeps beeps;
+	uses process_card process_card;
+
+    consumes SerialEvent has_serial;
+}

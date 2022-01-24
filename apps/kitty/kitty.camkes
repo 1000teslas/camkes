@@ -1,0 +1,182 @@
+/*
+ * Copyright 2014, NICTA
+ *
+ * This software may be distributed and modified according to the terms of
+ * the BSD 2-Clause license. Note that NO WARRANTY is provided.
+ * See "LICENSE_BSD2.txt" for details.
+ *
+ * @TAG(NICTA_BSD)
+ */
+
+#include <usbsizes.h>
+#include <displaysizes.h>
+
+import <std_connector.camkes>;
+import <camkes-hardware.idl4>;
+import "components/serial/serial.camkes";
+import "components/rfid/rfid.camkes";
+import "components/client/client.camkes";
+import "components/timer/timer.camkes";
+import "components/display/display.camkes";
+import "components/usb/usb.camkes";
+
+component uart {
+    hardware;
+    emits UARTIntr intr;
+    dataport Buf mem;
+    dataport Buf iomux;      /* For u-boot bug workaround. */
+}
+
+component usb_device {
+    hardware;
+    include <usbregion.h>;
+
+    dataport UsbRegion mem;
+    dataport UsbRegion2 mem2;
+    dataport CCMRegion ccmmem;
+    dataport AnalogRegion analogmem;
+    emits USBIntr irq;
+}
+
+assembly {
+    composition {
+        component client client_object;
+
+        /* RFID card reading */
+        component uart   uart_object;
+        component serial serial_object;
+        component rfid   rfid_object;
+
+        component usb_device usb_device1;
+        component usb usb_driver;
+
+        /* Network */
+         component nic    nic_object;
+
+        /* EPIT Timer */
+        component epit epit_object;
+        component timer timer_object;
+
+        /* Display */
+        component display display_object;
+        component hdmi hdmi_object;
+
+        /* UART hardware -- Serial driver */
+        connection seL4HardwareInterrupt irq(from uart_object.intr, to serial_object.intr);
+        connection seL4HardwareMMIO      uart_mem(from serial_object.mem, to uart_object.mem);
+        connection seL4HardwareMMIO      uart_iomux(from serial_object.iomux,
+                                  to uart_object.iomux);
+        connection seL4RPCCall               serial_inf(from rfid_object.serial,
+                                  to serial_object.serial);
+        connection seL4SharedData        serial_buf(from rfid_object.buf, to serial_object.buf);
+        connection seL4NotificationNative  has_serial(from serial_object.has_data, to rfid_object.has_serial);
+
+        /* RFID -- Client */
+        connection seL4SharedData        rfid_client(from rfid_object.rfid_card,
+                                   to client_object.rfid_card);
+        connection seL4Notification            rfid_client_evt(from rfid_object.rfid_evt,
+                                    to client_object.rfid_evt);
+
+        /* Display -- Client */
+          //connection seL4SharedData        display_client_data(from display_object.display_data,
+          //                                             to client_object.display_data);
+        connection seL4RPCCall           display_client(from client_object.display,
+                                to display_object.display);
+
+        connection seL4RPCCall beepbeep(from client_object.beeps, to rfid_object.beeps);
+        connection seL4RPCCall process_card(from rfid_object.process_card, to client_object.process_card);
+        connection seL4RPCCall serial_unlock(from usb_driver.serial, to serial_object.lock);
+
+        // /* FEC driver -- NIC device */
+        connection seL4HardwareInterrupt nic_irq(from nic_object.irq, to client_object.irq);
+        connection seL4HardwareMMIO nic_mmio(from client_object.mmio_base, to nic_object.mmio_base);
+        connection seL4HardwareMMIO nic_ocotp(from client_object.ocotp_base, to nic_object.ocotp_base);
+        connection seL4HardwareMMIO nic_iomux(from client_object.iomux_base, to nic_object.iomux_base);
+        connection seL4HardwareMMIO nic_ccm(from client_object.ccm_base, to nic_object.ccm_base);
+        connection seL4HardwareMMIO nic_analog(from client_object.analog_base, to nic_object.analog_base);
+        connection seL4HardwareMMIO nic_gpio3(from client_object.gpio3_base, to nic_object.gpio3_base);
+        connection seL4HardwareMMIO nic_gpio6(from client_object.gpio6_base, to nic_object.gpio6_base);
+
+        /* USB driver */
+        connection seL4HardwareMMIO usb_port(from usb_driver.buf, to usb_device1.mem);
+        connection seL4HardwareMMIO usb_port2(from usb_driver.buf2, to usb_device1.mem2);
+        connection seL4HardwareMMIO analog_port(from usb_driver.analog_buf, to usb_device1.analogmem);
+        connection seL4HardwareMMIO ccm_port(from usb_driver.ccm_buf, to usb_device1.ccmmem);
+        connection seL4HardwareInterrupt usbirq(from usb_device1.irq, to usb_driver.irq);
+
+        /* EPIT -- Timer driver */
+        connection seL4HardwareMMIO epit_mem(from timer_object.mmio_base, to epit_object.mmio_base);
+        connection seL4HardwareInterrupt epit_irq(from epit_object.irq, to timer_object.irq);
+
+        /* Timer -- FEC */
+        connection seL4RPCCall timer_inf(from client_object.timer, to timer_object.tm);
+        connection seL4NotificationNative  timer_evt(from timer_object.timer_update, to client_object.timer_update);
+
+        /* Display driver -- HDMI */
+        connection seL4HardwareMMIO hdmi_mmio(from display_object.hdmi_base, to hdmi_object.hdmi_base);
+        connection seL4HardwareMMIO ipu_mmio_0(from display_object.ipu_base_0, to hdmi_object.ipu_base_0);
+        connection seL4HardwareMMIO ipu_mmio_1(from display_object.ipu_base_1, to hdmi_object.ipu_base_1);
+        connection seL4HardwareMMIO ipu_mmio_2(from display_object.ipu_base_2, to hdmi_object.ipu_base_2);
+        connection seL4HardwareMMIO ipu_mmio_3(from display_object.ipu_base_3, to hdmi_object.ipu_base_3);
+    }
+
+    configuration
+    {
+        /* SabreLite UART1 */
+        uart_object.mem_paddr = 0x02020000;
+        uart_object.mem_size = 0x1000;
+        uart_object.iomux_paddr = 0x020E0000;
+        uart_object.iomux_size = 0x1000;
+        uart_object.intr_irq_number  = 58;  /* With seL4 mask 26. */
+
+        // /* SabreLite NIC */
+        nic_object.irq_irq_number    = 150; /* With seL4 mask 22. */
+        nic_object.mmio_base_paddr = 0x02188000;
+        nic_object.mmio_base_size =  0x1000;
+        nic_object.ocotp_base_paddr = 0x021BC000;
+        nic_object.ocotp_base_size = 0x1000;
+        nic_object.iomux_base_paddr = 0x020E0000;
+        nic_object.iomux_base_size = 0x1000;
+        nic_object.ccm_base_paddr = 0x020C4000;
+        nic_object.ccm_base_size = 0x1000;
+        nic_object.analog_base_paddr = 0x020C8000;
+        nic_object.analog_base_size = 0x1000;
+        nic_object.gpio3_base_paddr = 0x020A4000;
+        nic_object.gpio3_base_size = 0x1000;
+        nic_object.gpio6_base_paddr = 0x020B0000;
+        nic_object.gpio6_base_size = 0x1000;
+
+        client_object.dma_pool = 0x100000;
+
+        usb_driver.dma_pool = 0x100000;
+        usb_device1.mem_paddr = 0x020ca000;
+        usb_device1.mem_size = USBLENGTH;
+        usb_device1.mem2_paddr = 0x02184000;
+        usb_device1.mem2_size = USBLENGTH2;
+        usb_device1.ccmmem_paddr = 0x020C4000;
+        usb_device1.ccmmem_size = CCMLENGTH;
+        usb_device1.analogmem_paddr = 0x020C8000;
+        usb_device1.analogmem_size = ANALOGLENGTH;
+        usb_device1.irq_irq_number = 72;
+
+        /* SabreLite EPIT */
+        epit_object.mmio_base_paddr = 0x020D0000;
+        epit_object.mmio_base_size = 0x1000;
+        epit_object.irq_irq_number = 88;    /* With seL4 mask 24. */
+
+
+        /* SabreLite HDMI */
+        hdmi_object.hdmi_base_paddr = 0x00120000;
+        hdmi_object.hdmi_base_size = HDMILENGTH;
+        hdmi_object.ipu_base_0_paddr = 0x02400000;
+        hdmi_object.ipu_base_0_size = IPULENGTH;
+        hdmi_object.ipu_base_1_paddr = 0x02500000;
+        hdmi_object.ipu_base_1_size = IPULENGTH;
+        hdmi_object.ipu_base_2_paddr = 0x02600000;
+        hdmi_object.ipu_base_2_size = IPULENGTH;
+        hdmi_object.ipu_base_3_paddr = 0x02700000;
+        hdmi_object.ipu_base_3_size = IPULENGTH;
+
+        display_object.dma_pool = 0x800000;
+    }
+}

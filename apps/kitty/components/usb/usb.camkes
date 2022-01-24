@@ -1,0 +1,24 @@
+/*
+ * Copyright 2014, NICTA
+ *
+ * This software may be distributed and modified according to the terms of
+ * the BSD 2-Clause license. Note that NO WARRANTY is provided.
+ * See "LICENSE_BSD2.txt" for details.
+ *
+ * @TAG(NICTA_BSD)
+ */
+
+ import "../../interfaces/serial.idl4";
+
+component usb {
+    control;
+    include <usbregion.h>;
+	dataport UsbRegion buf;
+    dataport UsbRegion2 buf2;
+    dataport CCMRegion ccm_buf;
+    dataport AnalogRegion analog_buf;
+    consumes USBIntr irq;
+    uses serial_lock  serial;
+    has mutex m1;
+    has mutex m2;
+}
